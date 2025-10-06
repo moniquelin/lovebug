@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -31,6 +32,9 @@ type application struct {
 
 func main() {
 	var cfg config
+
+	// Load .env
+	godotenv.Load()
 
 	// Read command-line flags
 	flag.IntVar(&cfg.port, "port", 4000, "API server port")
