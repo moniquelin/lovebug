@@ -15,7 +15,6 @@ import (
 var (
 	ErrDuplicateEmail = errors.New("duplicate email")
 	ErrEditConflict   = errors.New("edit conflict")
-	ErrRecordNotFound = errors.New("record not found")
 )
 
 // Define a User struct to represent an individual user. Importantly, notice how we are
@@ -23,16 +22,16 @@ var (
 // any output when we encode it to JSON. Also notice that the Password field uses the
 // custom password type defined below.
 type User struct {
-	ID        int64     `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Password  password  `json:"-"`
-	Gender    string    `json:"gender"`
-	Activated bool      `json:"activated"`
-	Premium   bool      `json:"premium"`
-	LastShownID bool `json: "last_shown_id`
-	Version   bool      `json:"-"`
+	ID          int64     `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	Name        string    `json:"name"`
+	Email       string    `json:"email"`
+	Password    password  `json:"-"`
+	Gender      string    `json:"gender"`
+	Activated   bool      `json:"activated"`
+	Premium     bool      `json:"premium"`
+	LastShownID bool      `json:"last_shown_id"`
+	Version     bool      `json:"-"`
 }
 
 // Create a custom password type which is a struct containing the plaintext and hashed
@@ -108,10 +107,10 @@ type UserModel struct {
 
 func (m UserModel) Insert(user *User) error {
 	query := `
-		INSERT INTO users (name, email, password_hash, gender, activated, premium, last_shown_id)
+		INSERT INTO users (name, email, password_hash, gender, activated, premium)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, version`
-	args := []interface{}{user.Name, user.Email, user.Password.hash, user.Activated, user.LastShownID, .Premium}
+	args := []interface{}{user.Name, user.Email, user.Password.hash, user.Gender, user.Activated, user.Premium}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	// If the table already contains a record with this email address, then when we try
@@ -137,9 +136,9 @@ func (m UserModel) Insert(user *User) error {
 // return one record (or none at all, in which case we return a ErrRecordNotFound error).
 func (m UserModel) GetByEmail(email string) (*User, error) {
 	query := `
-SELECT id, created_at, name, email, password_hash, gender, activated, premium, version
-FROM users
-WHERE email = $1`
+		SELECT id, created_at, name, email, password_hash, gender, activated, premium, last_shown_id, version
+		FROM users
+		WHERE email = $1`
 	var user User
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -149,7 +148,10 @@ WHERE email = $1`
 		&user.Name,
 		&user.Email,
 		&user.Password.hash,
+		&user.Gender,
 		&user.Activated,
+		&user.Premium,
+		&user.LastShownID,
 		&user.Version,
 	)
 	if err != nil {
@@ -164,22 +166,24 @@ WHERE email = $1`
 }
 
 // Update the details for a specific user. Notice that we check against the version
-// field to help prevent any race conditions during the request cycle, just like we did
-// when updating a movie. And we also check for a violation of the "users_email_key"
-// constraint when performing the update, just like we did when inserting the user
-// record originally.
+// field to help prevent any race conditions during the request cycle.
+// And we also check for a violation of the "users_email_key"
+// constraint when performing the update
 func (m UserModel) Update(user *User) error {
 	query := `
-UPDATE users
-SET name = $1, email = $2, password_hash = $3, activated = $4, version = version + 1
-WHERE id = $5 AND version = $6
-RETURNING version`
+		UPDATE users
+		SET name = $1, email = $2, password_hash = $3, activated = $4, gender = $5, premium = $6, version = version + 1
+		WHERE id = $7 AND version = $8
+		RETURNING version`
 	args := []interface{}{
 		user.Name,
 		user.Email,
 		user.Password.hash,
 		user.Activated,
+		user.Gender,
+		user.Premium,
 		user.ID,
+		user.Version,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

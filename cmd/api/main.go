@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/moniquelin/lovebug/internal/data"
+	"github.com/moniquelin/lovebug/internal/jsonlog"
 )
 
 type config struct {
@@ -23,11 +24,20 @@ type config struct {
 		maxIdleConns int
 		maxIdleTime  string
 	}
+	// Add a new limiter struct containing fields for the requests-per-second and burst
+	// values, and a boolean field which we can use to enable/disable rate limiting
+	// altogether.
+	limiter struct {
+		rps     float64
+		burst   int
+		enabled bool
+	}
 }
 
 type application struct {
 	config config
-	logger *log.Logger
+	logger *jsonlog.Logger
+	models data.Models
 }
 
 func main() {
@@ -48,43 +58,48 @@ func main() {
 	flag.IntVar(&cfg.db.maxIdleConns, "db-max-idle-conns", 25, "PostgreSQL max idle connections")
 	flag.StringVar(&cfg.db.maxIdleTime, "db-max-idle-time", "15m", "PostgreSQL max connection idle time")
 
+	// Create command line flags to read the setting values into the config struct.
+	// Notice that we use true as the default for the 'enabled' setting?
+	flag.Float64Var(&cfg.limiter.rps, "limiter-rps", 2, "Rate limiter maximum requests per second")
+	flag.IntVar(&cfg.limiter.burst, "limiter-burst", 4, "Rate limiter maximum burst")
+	flag.BoolVar(&cfg.limiter.enabled, "limiter-enabled", true, "Enable rate limiter")
+
 	flag.Parse()
 
 	// Initialize logger to write messages to the standard out stream
-	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
-
-	// Create connection pool
+	logger := jsonlog.New(os.Stdout, jsonlog.LevelInfo)
 	db, err := openDB(cfg)
 	if err != nil {
-		logger.Fatal(err)
+		// Use the PrintFatal() method to write a log entry containing the error at the
+		// FATAL level and exit. We have no additional properties to include in the log
+		// entry, so we pass nil as the second parameter.
+		logger.PrintFatal(err, nil)
 	}
-
 	defer db.Close()
-	logger.Printf("Database connection pool established")
-
-	// Declare application struct
+	// Likewise use the PrintInfo() method to write a message at the INFO level.
+	logger.PrintInfo("database connection pool established", nil)
 	app := &application{
 		config: cfg,
 		logger: logger,
+		models: data.NewModels(db),
 	}
-
-	// Declare servemux
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthcheck", app.healthcheckHandler)
-
-	// Declare HTTP server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),
-		Handler:      mux,
+		Handler:      app.routes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
-
-	// Start the HTTP server
-	logger.Printf("Starting %s server on %s", cfg.env, srv.Addr)
+	// Again, we use the PrintInfo() method to write a "starting server" message at the
+	// INFO level. But this time we pass a map containing additional properties (the
+	// operating environment and server address) as the final parameter.
+	logger.PrintInfo("starting server", map[string]string{
+		"addr": srv.Addr,
+		"env":  cfg.env,
+	})
 	err = srv.ListenAndServe()
-	logger.Fatal(err)
+	// Use the PrintFatal() method to log the error and exit.
+	logger.PrintFatal(err, nil)
 }
 
 // The openDB() function returns a sql.DB connection pool.
