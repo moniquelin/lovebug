@@ -183,6 +183,7 @@ func (m UserModel) Update(user *User) error {
 		user.Gender,
 		user.Premium,
 		user.ID,
+		&user.LastShownID,
 		user.Version,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

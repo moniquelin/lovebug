@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS "users" (
   "gender" text NOT NULL CHECK(gender IN ('male', 'female')),
   "activated" bool NOT NULL DEFAULT FALSE,
   "premium" bool NOT NULL DEFAULT FALSE,
-  "last_shown_id" bigint,
+  "last_shown_user_id" bigint,
   "version" integer NOT NULL DEFAULT 1,
   PRIMARY KEY ("id")
 );
